@@ -85,6 +85,7 @@ unsigned long PipelineDepth = 10;
 unsigned long TimeOut = 120;
 bool Debug = false;
 URI Proxy;
+IAMRole iamRole = IAMRole();
 
 unsigned long CircleBuf::BwReadLimit=0;
 unsigned long CircleBuf::BwTickReadData=0;
@@ -784,8 +785,13 @@ void HttpMethod::SendReq(FetchItem *Itm,CircleBuf &Out)
 
    string extractedPassword;
    if (Uri.Password.empty() && NULL == getenv("AWS_SECRET_ACCESS_KEY")) {
-     cerr << "E: No AWS_SECRET_ACCESS_KEY set" << endl;
-     exit(1);
+      if (!iamRole.Exists()) {
+        cerr << "E: No AWS_SECRET_ACCESS_KEY set" << endl;
+        exit(1);
+      }
+      else {
+        extractedPassword = iamRole.credentials->secretKey;
+      }
    } else if(Uri.Password.empty()) {
      extractedPassword = getenv("AWS_SECRET_ACCESS_KEY");
    } else {
@@ -796,24 +802,45 @@ void HttpMethod::SendReq(FetchItem *Itm,CircleBuf &Out)
      }
    }
 
-   char headertext[SLEN], signature[SLEN];
-   sprintf(headertext,"GET\n\n\n%s\n%s", dateString.c_str(), normalized_path.c_str());
-   doEncrypt(headertext, signature, extractedPassword.c_str());
-
-   string signatureString(signature);
   string user;
   if (Uri.User.empty() && NULL == getenv("AWS_ACCESS_KEY_ID")) {
-    cerr << "E: No AWS_ACCESS_KEY_ID set" << endl;
-    exit(1);
+    if (!iamRole.Exists()) {
+      cerr << "E: No AWS_ACCESS_KEY_ID set" << endl;
+      exit(1);
+    }
+    else {
+       user = iamRole.credentials->accessKey;
+    }
   } else if (Uri.User.empty()) {
     user = getenv("AWS_ACCESS_KEY_ID");
   } else {
     user = Uri.User;
   }
+   
+   char headertext[SLEN], signature[SLEN];
+   
+   if (iamRole.Exists()) {
+      string date_header = "x-amz-date:" + dateString;
+      Req += date_header + "\r\n";
+      
+      string token_header = "x-amz-security-token:" + iamRole.credentials->token;
+      Req += token_header + "\r\n";
+      
+      sprintf(headertext,"GET\n\n\n\n%s\n%s\n%s", date_header.c_str(), token_header.c_str(),  normalized_path.c_str());
+      
+      if (Debug == true)
+         cerr << "To Sign:\n" << string(headertext);
+   	
+      doEncrypt(headertext, signature, extractedPassword.c_str());
+   }
+   else {
+      sprintf(headertext,"GET\n\n\n%s\n%s", dateString.c_str(), normalized_path.c_str());
+      doEncrypt(headertext, signature, extractedPassword.c_str());
+   }
 
-  //cerr << "user " << user << "\n";
-	Req += "Authorization: AWS " + user + ":" + signatureString + "\r\n";
-   	Req += "User-Agent: Ubuntu APT-HTTP/1.3 ("VERSION")\r\n\r\n";
+   string signatureString(signature);
+   Req += "Authorization: AWS " + user + ":" + signatureString + "\r\n";
+   Req += "User-Agent: Ubuntu APT-HTTP/1.3 ("VERSION")\r\n\r\n";
 
    if (Debug == true)
      cerr << "Request" << endl << Req << endl;
@@ -1214,7 +1241,7 @@ int HttpMethod::Loop()
       
       // Reset the pipeline
       if (Server->ServerFd == -1)
-	 QueueBack = Queue;	 
+	 QueueBack = Queue;
 	 
       // Connnect to the host
       if (Server->Open() == false)
@@ -1371,6 +1398,119 @@ int HttpMethod::Loop()
    return 0;
 }
 									/*}}}*/
+
+
+// IAMRole::IAMRole - AWS IAM Role Detection / Parsing				/*{{{*/
+// ---------------------------------------------------------------------
+/* */
+
+IAMRole::IAMRole() {
+   string roleName;
+
+   string roleUrl = "http://169.254.169.254/latest/meta-data/iam/security-credentials/";
+
+   DownloadFile((char*)roleUrl.c_str(), roleName);
+   
+   if (!roleName.empty()) {
+      string credurl = string(roleUrl) + roleName;
+   
+      string jsonCredentials;
+      DownloadFile((char*)credurl.c_str(), jsonCredentials);
+   
+      credentials = new IAMRoleCredentials();
+      credentials->accessKey = ParseJsonValue(jsonCredentials, "AccessKeyId");
+      credentials->secretKey = ParseJsonValue(jsonCredentials, "SecretAccessKey");
+      credentials->token = ParseJsonValue(jsonCredentials, "Token");
+   }
+}
+
+/*}}}*/
+
+// IAMRole::Exists - Are the credentials available		/*{{{*/
+// ---------------------------------------------------------------------
+/* */
+
+bool IAMRole::Exists() {
+   return credentials != NULL;
+}
+
+/*}}}*/
+
+string IAMRole::ParseJsonValue(string const &json, string const &key) {
+   
+   string value = Between(json, key, "\n");
+   // value = value.substr(value.size() - 1, value.size());
+   value = ReplaceChar(value, '"', ' ');
+   value = ReplaceChar(value, ',', ' ');
+   value = ReplaceChar(value, ':', ' ');
+   Trim(value);
+   
+   return value;
+}
+
+void IAMRole::Trim(string& s)
+{
+   string::size_type pos = s.find_last_not_of(' ');
+   if(pos != string::npos)
+   {
+      if (s.length()!=pos+1)//if there are trailing whitespaces erase them
+         s.erase(pos+1);
+      pos = s.find_first_not_of(' ');
+      if(pos!=0) //if there are leading whitespaces erase them
+         s.erase(0, pos);
+   }
+   else s="";
+}
+
+string IAMRole::ReplaceChar(string str, char ch1, char ch2) {
+   for (int i = 0; i < str.length(); ++i) {
+      if (str[i] == ch1)
+         str[i] = ch2;
+   }
+   
+   return str;
+}
+
+string IAMRole::Between(string const &in, string const &before, string const &after) {
+   size_t beg = in.find(before);
+   beg += before.size();
+   size_t end = in.find(after, beg);
+   return in.substr(beg, end-beg);
+}
+
+static size_t WriteCallback(void *contents, size_t size, size_t nmemb, void *userp)
+{
+   ((string*)userp)->append((char*)contents, size * nmemb);
+   return size * nmemb;
+}
+
+void IAMRole::DownloadFile(char* url, string &readBuffer) {
+   CURL *curl;
+   CURLcode res;
+   
+   curl = curl_easy_init();
+   if(curl) {
+      if (Debug)
+         cerr << "Downloading " << url << " ..." << endl;
+      
+      curl_easy_setopt(curl, CURLOPT_URL, url);
+      curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+      curl_easy_setopt(curl, CURLOPT_WRITEDATA, &readBuffer);
+      res = curl_easy_perform(curl);
+      
+      long http_code = 0;
+      curl_easy_getinfo (curl, CURLINFO_RESPONSE_CODE, &http_code);
+      if (http_code != 200) {
+         readBuffer = "";
+      }
+      
+      curl_easy_cleanup(curl);
+   }
+}
+
+
+
+
 
 
 

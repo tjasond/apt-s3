@@ -144,6 +144,29 @@ struct ServerState
    ~ServerState() {Close();};
 };
 
+struct IAMRoleCredentials {
+   
+   string accessKey;
+   string secretKey;
+   string token;
+};
+
+class IAMRole {
+   
+   void DownloadFile(char* url, string &readBuffer);
+   string ParseJsonValue(string const &json, string const &key);
+   string ReplaceChar(string str, char ch1, char ch2);
+   string Between(string const &in, string const &before, string const &after);
+   void Trim(string& s);
+   
+public:
+   bool Exists();
+   IAMRoleCredentials* credentials;
+   
+   IAMRole();
+   ~IAMRole() {delete credentials;};
+};
+
 class HttpMethod : public pkgAcqMethod
 {
    void SendReq(FetchItem *Itm,CircleBuf &Out);
@@ -178,4 +201,7 @@ class HttpMethod : public pkgAcqMethod
    };
 };
 
+
+
 #endif
+
