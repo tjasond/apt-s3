@@ -26,6 +26,8 @@ Finally, this is how you add it to the /etc/apt/sources.list file if you want yo
 
 otherwise leave off the credentials and it will draw them from the environment variables `AWS_ACCESS_KEY_ID` and `AWS_SECRET_KEY_ID`.
 
+Update [tjasond]: If no credentials are specified in either the deb url or with environment variables, it will attempt to load the IAM Role credentials and use them.  More information about AWS IAM Roles can be found [here](http://docs.aws.amazon.com/IAM/latest/UserGuide/WorkingWithRoles.html "AWS IAM Roles")
+
 Simply upload all of your .deb packages and Packages.gz file into the s3 bucket you chose with the file key mapping that matches the file system layout.
 
 ## Uploading repository to s3
