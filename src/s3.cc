@@ -785,6 +785,7 @@ void HttpMethod::SendReq(FetchItem *Itm,CircleBuf &Out)
 
    string extractedPassword;
    if (Uri.Password.empty() && NULL == getenv("AWS_SECRET_ACCESS_KEY")) {
+      if (!iamRole.Exists()) { iamRole.LoadCredentials(); }
       if (!iamRole.Exists()) {
         cerr << "E: No AWS_SECRET_ACCESS_KEY set" << endl;
         exit(1);
@@ -1405,6 +1406,10 @@ int HttpMethod::Loop()
 /* */
 
 IAMRole::IAMRole() {
+credentials = NULL;
+}
+
+void IAMRole::LoadCredentials() {
    string roleName;
 
    string roleUrl = "http://169.254.169.254/latest/meta-data/iam/security-credentials/";

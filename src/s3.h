@@ -160,6 +160,7 @@ class IAMRole {
    void Trim(string& s);
    
 public:
+   void LoadCredentials();
    bool Exists();
    IAMRoleCredentials* credentials;
    
