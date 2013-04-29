@@ -24,7 +24,7 @@ Finally, this is how you add it to the /etc/apt/sources.list file if you want yo
 
     deb s3://AWS_ACCESS_ID:[AWS_SECRET_KEY_IN_BRACKETS]@s3-ENDPOINT.amazonaws.com/BUCKETNAME prod main
 
-otherwise leave off the credentials and it will draw them from the environment variables `AWS_ACCESS_KEY_ID` and `AWS_SECRET_KEY_ID`.
+otherwise leave off the credentials and it will draw them from the environment variables `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`.
 
 Update [tjasond]: If no credentials are specified in either the deb url or with environment variables, it will attempt to load the IAM Role credentials and use them.  More information about AWS IAM Roles can be found [here](http://docs.aws.amazon.com/IAM/latest/UserGuide/WorkingWithRoles.html "AWS IAM Roles")
 
